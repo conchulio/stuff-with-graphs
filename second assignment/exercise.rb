@@ -744,7 +744,7 @@ class Graph
     end
     # array
     # array[0...n_best]
-    return result[0...n_best].map { |item| item[1] }
+    return result.map { |item| item[1] }
   end
 
   def get_precision_and_recall_data predictions, edges_to_guess
