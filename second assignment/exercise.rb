@@ -85,6 +85,19 @@ class Graph
     end
   end
 
+  def prepare_raw_data graph_lines
+    parsed_lines = []
+    graph_lines.each do |line|
+      a, b = line.split(" ").map { |string| string.to_i }
+      parsed_lines << [a, b]
+    end
+    # Delete loops
+    parsed_lines.select! do |item|
+      item[0] != item[1]
+    end
+    parsed_lines
+  end
+
   def prepare_data graph_lines
     parsed_lines = []
     graph_lines.each do |line|
@@ -498,7 +511,9 @@ class Graph
   def get_edge_index_from_nodes start_node, end_node
     # puts 'start_node, end_node '+start_node.inspect+' '+end_node.inspect
     # puts 'first_index, second_index '+@separators[start_node].inspect+' '+get_neighbors(start_node).find_index(end_node).inspect
-    result = @separators[start_node]+get_neighbors(start_node).find_index(end_node)
+    second_index = get_neighbors(start_node).find_index(end_node)
+    return nil unless second_index
+    result = @separators[start_node]+second_index
     # puts "Start node #{start_node}, end node #{end_node}, edge index #{result}"
     result
   end
@@ -689,295 +704,145 @@ class Graph
     puts "Graph is sane!"
   end
 
+  def jaccard_score a, b
+    neighbors_a = get_neighbors a
+    neighbors_b = get_neighbors b
+    (neighbors_a & neighbors_b).length.fdiv((neighbors_a | neighbors_b).length)
+  end
+
+  def get_all_edges_which_dont_exist_yet
+    array = []
+    @separators.length.times do |a|
+      neighbors_a = get_neighbors a
+      neighbors_a.each do |b|
+        neighbors_b = get_neighbors b
+        neighbors_b.each do |c|
+          array << [a, c] if a < c && !neighbors_a.include?(c)
+        end
+      end
+    end
+    array
+  end
+
+  def predict_jaccard edges_to_test, n_best
+    array = []
+    puts "Starting testing"
+    edges_to_test.each do |edge|
+      array << [jaccard_score(edge[0], edge[1]), edge]
+    end
+    puts "Starting sorting"
+    array.sort! do |x, y|
+      if x[0] < y[0]
+        +1
+      elsif x[0] == y[0]
+        0
+      else
+        -1
+      end
+    end
+    # array
+    # array[0...n_best]
+    array[0...n_best].map { |item| item[1] }
+  end
+
+  def get_precision_and_recall_data predictions, edges_to_guess
+    # edges_to_guess = Set.new(edges_to_guess)
+    # puts "Rest of graph: #{edges_to_guess}"
+    total_number_of_edges_to_be_predicted = predictions.length
+
+    true_positives = Array.new predictions.length, nil
+    false_positives = Array.new predictions.length, nil
+    false_negatives = Array.new predictions.length, nil
+    previous_index = nil
+    predictions.length.times do |i|
+      tp_zero_or_one = 0
+      # byebug
+      if edges_to_guess.include?(predictions[i]) ||
+        edges_to_guess.include?([predictions[i][1], predictions[i][0]])
+        puts "Wohooooo!"
+        tp_zero_or_one = 1
+      end
+      previous_tp_value = 0
+      previous_tp_value = true_positives[previous_index] if previous_index
+      true_positives[i] = previous_tp_value + tp_zero_or_one
+
+      previous_fp_value = 0
+      previous_fp_value = false_positives[previous_index] if previous_index
+      false_positives[i] = previous_fp_value + 1-tp_zero_or_one
+
+      false_negatives[i] = total_number_of_edges_to_be_predicted - true_positives[i]
+      previous_index = i
+    end
+    return true_positives, false_positives, false_negatives
+  end
+
+  def calculate_precision_and_recall tp, fp, fn
+    num_of_predictions = tp.length
+    pr = []
+    rc = []
+    num_of_predictions.times do |i|
+      pr[i] = tp[i].fdiv(tp[i]+fp[i])
+      rc[i] = tp[i].fdiv(tp[i]+fn[i])
+    end
+    return pr, rc
+  end
+
 end
 
-srand 1234
-
-puts "DROPSOPHILA START"
 graph_d = Graph.new
-prepared_array = graph_d.prepare_data File.open("drosophila_PPI.txt", "r").each_line
+raw_data = graph_d.prepare_raw_data File.open("drosophila_PPI.txt", "r").each_line
+
+num_of_edges_to_cut = 2000
+edges_to_guess = raw_data.sample num_of_edges_to_cut
+puts "Length of edges to guess is #{edges_to_guess.length}"
+rest_of_graph = raw_data - edges_to_guess
+prepared_array = graph_d.prepare_graph rest_of_graph
+
 graph_d.build_graph prepared_array
 
 degrees_d = graph_d.get_degrees prepared_array
 graph_d.build_graph prepared_array
 graph_d.calculate_separators_in_graph
-# puts "separators "+graph_d.instance_variable_get(:@separators).inspect
-# puts "degrees "+graph_d.instance_variable_get(:@degrees).inspect
-# print "graph "
-# graph_d.print_graph_with_separators
 
-all_connected_components = graph_d.get_all_connected_components
-puts "Number of nodes:"
-puts graph_d.instance_variable_get(:@separators).length.to_s
-puts "Number of edges:"
-puts graph_d.instance_variable_get(:@graph).length.to_s
-puts "Number of connected components:"
-puts all_connected_components.length.to_s
-largest_component = all_connected_components[0]
-size_of_largest_component = largest_component.length
-puts "Size of the largest component:"
-puts size_of_largest_component.to_s
-num_isolated_nodes = graph_d.get_num_of_isolated_nodes
-puts "Number of isolated nodes:"
-puts num_isolated_nodes.to_s
-avg_clustering_coefficient = graph_d.calculate_global_clustering_coefficient
-puts "Average clustering coefficient:"
-puts avg_clustering_coefficient.to_s
-average_distance = graph_d.get_average_distance largest_component
-puts "Average distance (dividing all distance by the total number of edges):"
-puts average_distance.to_s
+puts "Before edges which don't exist"
+edges_to_test = graph_d.get_all_edges_which_dont_exist_yet
+puts "#{edges_to_test.length} edges to test"
+puts "Doing Jaccard stuff now"
+best_edges = graph_d.predict_jaccard edges_to_test, num_of_edges_to_cut
+puts "Best edges from Jaccard:"
+puts "Best edges: #{best_edges}"
+puts "Correctly guessed edges: #{(best_edges | best_edges.reverse) & edges_to_guess }"
+# tp, fp, fn = graph_d.get_precision_and_recall_data best_edges, edges_to_guess
+# puts "tp: #{tp}"
+# puts "fp: #{fp}"
+# puts "fn: #{fn}"
+#
+# pr, rc = graph_d.calculate_precision_and_recall tp, fp, fn
+# puts "pr: #{pr}"
+# puts "rc: #{rc}"
 
-degrees_dist = graph_d.get_distribution graph_d.instance_variable_get(:@degrees)
-Graph::plot_stuff degrees_dist, 'log', 'drosophila degree distribution', 'node degree', 'number of nodes'
-cumulative_distribution = graph_d.get_cumulative_distribution degrees_dist
-Graph::plot_stuff cumulative_distribution, 'log', 'drosophila cumulative degree distribution', 'node degree', 'sum of nodes'
-puts "DROPSOPHILA END"
-
-
-
-puts "ERDÖS RENYI START"
-g_hun = Graph.new
-
-graph_array = g_hun.generate_hungarian_graph 7236, 22270
-prepared_array = g_hun.prepare_graph graph_array
-g_hun.store_graph_in_file 'hungarian_graph.txt', graph_array
-
-g_hun.get_degrees prepared_array
-g_hun.build_graph prepared_array
-g_hun.calculate_separators_in_graph
-# puts "separators "+g_hun.instance_variable_get(:@separators).inspect
-# puts "degrees "+g_hun.instance_variable_get(:@degrees).inspect
-# print "graph "
-# g_hun.print_graph_with_separators
-
-all_connected_components = g_hun.get_all_connected_components
-puts "Number of nodes:"
-puts g_hun.instance_variable_get(:@separators).length.to_s
-puts "Number of edges:"
-puts g_hun.instance_variable_get(:@graph).length.to_s
-puts "Number of connected components:"
-puts all_connected_components.length.to_s
-largest_component = all_connected_components[0]
-size_of_largest_component = largest_component.length
-puts "Size of the largest component:"
-puts size_of_largest_component.to_s
-num_isolated_nodes = g_hun.get_num_of_isolated_nodes
-puts "Number of isolated nodes:"
-puts num_isolated_nodes.to_s
-avg_clustering_coefficient = g_hun.calculate_global_clustering_coefficient
-puts "Average clustering coefficient:"
-puts avg_clustering_coefficient.to_s
-# average_distance = g_hun.get_average_distance largest_component
-# puts "Average distance (dividing all distances by the total number of edges):"
-# puts average_distance.to_s
-
-degrees_dist = g_hun.get_distribution g_hun.instance_variable_get(:@degrees)
-Graph::plot_stuff degrees_dist, 'lin', 'erdös renyi degree distribution', 'node degree', 'number of nodes'
-cumulative_distribution = g_hun.get_cumulative_distribution degrees_dist
-Graph::plot_stuff cumulative_distribution, 'log', 'erdös-renyi cumulative degree distribution', 'node degree', 'sum of nodes'
-puts "ERDÖS RENYI END"
-
-
-
-puts "FIXED DEGREE DISTRIBUTION START"
-# Take degree list from drosophila
-g_fixed = Graph.new
-graph_array = g_fixed.prepare_graph g_fixed.generate_fixed_degree_graph(degrees_d)
-
-g_fixed.get_degrees graph_array
-g_fixed.build_graph graph_array
-g_fixed.calculate_separators_in_graph
-# puts "separators "+g_fixed.instance_variable_get(:@separators).inspect
-# puts "degrees "+g_fixed.instance_variable_get(:@degrees).inspect
-# print "graph "
-# g_fixed.print_graph_with_separators
-
-all_connected_components = g_fixed.get_all_connected_components
-puts "Number of nodes:"
-puts g_fixed.instance_variable_get(:@separators).length.to_s
-puts "Number of edges:"
-puts g_fixed.instance_variable_get(:@graph).length.to_s
-puts "Number of connected components:"
-puts all_connected_components.length.to_s
-largest_component = all_connected_components[0]
-size_of_largest_component = largest_component.length
-puts "Size of the largest component:"
-puts size_of_largest_component.to_s
-num_isolated_nodes = g_fixed.get_num_of_isolated_nodes
-puts "Number of isolated nodes:"
-puts num_isolated_nodes.to_s
-avg_clustering_coefficient = g_fixed.calculate_global_clustering_coefficient
-puts "Average clustering coefficient:"
-puts avg_clustering_coefficient.to_s
-average_distance = g_fixed.get_average_distance largest_component
-puts "Average distance (dividing all distance by the total number of edges):"
-puts average_distance.to_s
-
-degrees_dist = g_fixed.get_distribution g_fixed.instance_variable_get(:@degrees)
-Graph::plot_stuff degrees_dist, 'log', 'fixed degree distribution', 'node degree', 'number of nodes'
-
-puts "FIXED DEGREE DISTRIBUTION END"
-
-
-
-puts "SWITCHED START"
-# Take degree list from drosophila
-g_switched = Graph.new
-g_switched.instance_variable_set(:@separators, graph_d.instance_variable_get(:@separators))
-g_switched.instance_variable_set(:@graph, graph_d.instance_variable_get(:@graph))
-g_switched.instance_variable_set(:@degrees, graph_d.instance_variable_get(:@degrees))
-intermediate_ccs = g_switched.generate_switched_graph 1000000, 10000
-
-g_switched.write_to_file 'switched_graph.txt'
-
-g_switched.check_graph_sanity
-
-# puts "separators "+g_switched.instance_variable_get(:@separators).inspect
-# puts "degrees "+g_switched.instance_variable_get(:@degrees).inspect
-# print "graph "
-# g_switched.print_graph_with_separators
-
-all_connected_components = g_switched.get_all_connected_components
-puts "Number of nodes:"
-puts g_switched.instance_variable_get(:@separators).length.to_s
-puts "Number of edges:"
-puts g_switched.instance_variable_get(:@graph).length.to_s
-puts "Number of connected components:"
-puts all_connected_components.length.to_s
-largest_component = all_connected_components[0]
-size_of_largest_component = largest_component.length
-puts "Size of the largest component:"
-puts size_of_largest_component.to_s
-num_isolated_nodes = g_switched.get_num_of_isolated_nodes
-puts "Number of isolated nodes:"
-puts num_isolated_nodes.to_s
-avg_clustering_coefficient = g_switched.calculate_global_clustering_coefficient
-puts "Average clustering coefficient:"
-puts avg_clustering_coefficient.to_s
-Graph::plot_stuff intermediate_ccs, 'lin', 'progression of clustering coefficient', 'number of switches (in 10000)', 'clustering coefficient', 'lines'
-average_distance = g_switched.get_average_distance largest_component
-puts "Average distance (dividing all distance by the total number of edges):"
-puts average_distance.to_s
-
-degrees_dist = g_switched.get_distribution g_switched.instance_variable_get(:@degrees)
-Graph::plot_stuff degrees_dist, 'log', 'switched degree distribution', 'node degree', 'number of nodes'
-puts "SWITCHED END"
-
-
-
-puts "BARABASI ALBERT START"
-# Take degree list from drosophila
-g_template = Graph.new
-prepared_array = g_template.prepare_data File.open("barabasi-albert.txt", "r").each_line
-g_template.build_graph prepared_array
-
-degrees_d = g_template.get_degrees prepared_array
-g_template.build_graph prepared_array
-g_template.calculate_separators_in_graph
-g_barabasi_albert = g_template.generate_scale_free_graph 7236, 3
-
-g_barabasi_albert.check_graph_sanity
-
-# puts "separators "+g_barabasi_albert.instance_variable_get(:@separators).inspect
-# puts "degrees "+g_barabasi_albert.instance_variable_get(:@degrees).inspect
-# print "graph "
-# g_barabasi_albert.print_graph_with_separators
-
-all_connected_components = g_barabasi_albert.get_all_connected_components
-puts "Number of nodes:"
-puts g_barabasi_albert.instance_variable_get(:@separators).length.to_s
-puts "Number of edges:"
-puts g_barabasi_albert.instance_variable_get(:@graph).length.to_s
-puts "Number of connected components:"
-puts all_connected_components.length.to_s
-largest_component = all_connected_components[0]
-size_of_largest_component = largest_component.length
-puts "Size of the largest component:"
-puts size_of_largest_component.to_s
-num_isolated_nodes = g_barabasi_albert.get_num_of_isolated_nodes
-puts "Number of isolated nodes:"
-puts num_isolated_nodes.to_s
-avg_clustering_coefficient = g_barabasi_albert.calculate_global_clustering_coefficient
-puts "Average clustering coefficient:"
-puts avg_clustering_coefficient.to_s
-# average_distance = g_barabasi_albert.get_average_distance largest_component
+# all_connected_components = graph_d.get_all_connected_components
+# puts "Number of nodes:"
+# puts graph_d.instance_variable_get(:@separators).length.to_s
+# puts "Number of edges:"
+# puts graph_d.instance_variable_get(:@graph).length.to_s
+# puts "Number of connected components:"
+# puts all_connected_components.length.to_s
+# largest_component = all_connected_components[0]
+# size_of_largest_component = largest_component.length
+# puts "Size of the largest component:"
+# puts size_of_largest_component.to_s
+# num_isolated_nodes = graph_d.get_num_of_isolated_nodes
+# puts "Number of isolated nodes:"
+# puts num_isolated_nodes.to_s
+# avg_clustering_coefficient = graph_d.calculate_global_clustering_coefficient
+# puts "Average clustering coefficient:"
+# puts avg_clustering_coefficient.to_s
+# average_distance = graph_d.get_average_distance largest_component
 # puts "Average distance (dividing all distance by the total number of edges):"
 # puts average_distance.to_s
-
-degrees_dist = g_barabasi_albert.get_distribution g_barabasi_albert.instance_variable_get(:@degrees)
-Graph::plot_stuff degrees_dist, 'log', 'barabasi albert degree distribution', 'node degree', 'number of nodes'
-cumulative_distribution = g_barabasi_albert.get_cumulative_distribution degrees_dist
-Graph::plot_stuff cumulative_distribution, 'log', 'barabasi cumulative degree distribution', 'node degree', 'sum of nodes'
-puts "BARABASI ALBERT END"
-
-
-
-puts "WATTS STROGATZ START"
-# Take degree list from drosophila
-g_watts = Graph.new
-average_degree = (graph_d.instance_variable_get(:@degrees).inject(:+).fdiv(graph_d.instance_variable_get(:@degrees).length)).round.to_i
-prepared_array = g_watts.prepare_graph g_watts.generate_watts_strogatz(7236, average_degree)
-g_watts.build_graph prepared_array
-
-degrees_d = g_watts.get_degrees prepared_array
-g_watts.build_graph prepared_array
-g_watts.calculate_separators_in_graph
-# g_watts.check_graph_sanity
-
-puts "BEFORE SWITCHING"
-all_connected_components = g_watts.get_all_connected_components
-puts "Number of nodes:"
-puts g_watts.instance_variable_get(:@separators).length.to_s
-puts "Number of edges:"
-puts g_watts.instance_variable_get(:@graph).length.to_s
-puts "Number of connected components:"
-puts all_connected_components.length.to_s
-largest_component = all_connected_components[0]
-size_of_largest_component = largest_component.length
-puts "Size of the largest component:"
-puts size_of_largest_component.to_s
-num_isolated_nodes = g_watts.get_num_of_isolated_nodes
-puts "Number of isolated nodes:"
-puts num_isolated_nodes.to_s
-avg_clustering_coefficient = g_watts.calculate_global_clustering_coefficient
-puts "Average clustering coefficient:"
-puts avg_clustering_coefficient.to_s
-average_distance = g_watts.get_average_distance largest_component
-puts "Average distance (dividing all distance by the total number of edges):"
-puts average_distance.to_s
-
-g_watts.switch_watts_strogatz average_degree, 0.74
-# g_watts.check_graph_sanity
-
-# puts "separators "+g_watts.instance_variable_get(:@separators).inspect
-# puts "degrees "+g_watts.instance_variable_get(:@degrees).inspect
-# print "graph "
-# g_watts.print_graph_with_separators
-
-puts "AFTER SWITCHING"
-all_connected_components = g_watts.get_all_connected_components
-puts "Number of nodes:"
-puts g_watts.instance_variable_get(:@separators).length.to_s
-puts "Number of edges:"
-puts g_watts.instance_variable_get(:@graph).length.to_s
-puts "Number of connected components:"
-puts all_connected_components.length.to_s
-largest_component = all_connected_components[0]
-size_of_largest_component = largest_component.length
-puts "Size of the largest component:"
-puts size_of_largest_component.to_s
-num_isolated_nodes = g_watts.get_num_of_isolated_nodes
-puts "Number of isolated nodes:"
-puts num_isolated_nodes.to_s
-avg_clustering_coefficient = g_watts.calculate_global_clustering_coefficient
-puts "Average clustering coefficient:"
-puts avg_clustering_coefficient.to_s
-average_distance = g_watts.get_average_distance largest_component
-puts "Average distance (dividing all distance by the total number of edges):"
-puts average_distance.to_s
-
-degrees_dist = g_watts.get_distribution g_watts.instance_variable_get(:@degrees)
-Graph::plot_stuff degrees_dist, 'lin', 'watts strogatz degree distribution', 'node degree', 'number of nodes'
-cumulative_distribution = g_watts.get_cumulative_distribution degrees_dist
-Graph::plot_stuff cumulative_distribution, 'log', 'watts strogatz cumulative degree distribution', 'node degree', 'sum of nodes'
-puts "WATTS STROGATZ END"
+#
+# degrees_dist = graph_d.get_distribution graph_d.instance_variable_get(:@degrees)
+# Graph::plot_stuff degrees_dist, 'log', 'drosophila degree distribution', 'node degree', 'number of nodes'
+# cumulative_distribution = graph_d.get_cumulative_distribution degrees_dist
+# Graph::plot_stuff cumulative_distribution, 'log', 'drosophila cumulative degree distribution', 'node degree', 'sum of nodes'
