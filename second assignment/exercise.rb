@@ -707,31 +707,33 @@ class Graph
   def jaccard_score a, b
     neighbors_a = get_neighbors a
     neighbors_b = get_neighbors b
-    (neighbors_a & neighbors_b).length.fdiv((neighbors_a | neighbors_b).length)
+    return (neighbors_a & neighbors_b).length.fdiv((neighbors_a | neighbors_b).length)
   end
 
   def get_all_edges_which_dont_exist_yet
-    array = []
+    result = []
     @separators.length.times do |a|
       neighbors_a = get_neighbors a
       neighbors_a.each do |b|
         neighbors_b = get_neighbors b
         neighbors_b.each do |c|
-          array << [a, c] if a < c && !neighbors_a.include?(c)
+          if a < c && !neighbors_a.include?(c)
+            result << [a, c]
+          end
         end
       end
     end
-    array
+    result
   end
 
   def predict_jaccard edges_to_test, n_best
-    array = []
+    result = []
     puts "Starting testing"
     edges_to_test.each do |edge|
-      array << [jaccard_score(edge[0], edge[1]), edge]
+      result << [jaccard_score(edge[0], edge[1]), edge]
     end
     puts "Starting sorting"
-    array.sort! do |x, y|
+    result.sort! do |x, y|
       if x[0] < y[0]
         +1
       elsif x[0] == y[0]
@@ -742,7 +744,7 @@ class Graph
     end
     # array
     # array[0...n_best]
-    array[0...n_best].map { |item| item[1] }
+    return result[0...n_best].map { |item| item[1] }
   end
 
   def get_precision_and_recall_data predictions, edges_to_guess
@@ -792,6 +794,7 @@ end
 graph_d = Graph.new
 raw_data = graph_d.prepare_raw_data File.open("drosophila_PPI.txt", "r").each_line
 
+puts "Raw data length: #{raw_data.length}"
 num_of_edges_to_cut = 2000
 edges_to_guess = raw_data.sample num_of_edges_to_cut
 puts "Length of edges to guess is #{edges_to_guess.length}"
@@ -812,6 +815,7 @@ best_edges = graph_d.predict_jaccard edges_to_test, num_of_edges_to_cut
 puts "Best edges from Jaccard:"
 puts "Best edges: #{best_edges}"
 puts "Correctly guessed edges: #{(best_edges | best_edges.reverse) & edges_to_guess }"
+puts "Rest of graph length: #{rest_of_graph.length}"
 # tp, fp, fn = graph_d.get_precision_and_recall_data best_edges, edges_to_guess
 # puts "tp: #{tp}"
 # puts "fp: #{fp}"
