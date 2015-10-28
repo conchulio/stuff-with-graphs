@@ -723,13 +723,14 @@ class Graph
         end
       end
     end
-    result
+    result.uniq
   end
 
-  def predict_jaccard edges_to_test, n_best
+  def predict_jaccard edges
     result = []
     puts "Starting testing"
-    edges_to_test.each do |edge|
+    edges.each do |edge|
+      # byebug
       result << [jaccard_score(edge[0], edge[1]), edge]
     end
     puts "Starting sorting"
@@ -742,13 +743,16 @@ class Graph
         -1
       end
     end
-    # array
-    # array[0...n_best]
-    return result.map { |item| item[1] }
+    # byebug
+    # result_with_one = result.select do |item|
+    #   item[0] == 1.0
+    # end
+    # puts "result_with_one.length: #{result_with_one.length}"
+    result.map { |item| item[1] }
   end
 
   def get_precision_and_recall_data predictions, edges_to_guess
-    # edges_to_guess = Set.new(edges_to_guess)
+    edges_to_guess = Set.new(edges_to_guess)
     # puts "Rest of graph: #{edges_to_guess}"
     total_number_of_edges_to_be_predicted = predictions.length
 
@@ -760,8 +764,8 @@ class Graph
       tp_zero_or_one = 0
       # byebug
       if edges_to_guess.include?(predictions[i]) ||
-        edges_to_guess.include?([predictions[i][1], predictions[i][0]])
-        puts "Wohooooo!"
+        edges_to_guess.include?(predictions[i].reverse)
+        # puts "Wohooooo!"
         tp_zero_or_one = 1
       end
       previous_tp_value = 0
@@ -791,6 +795,8 @@ class Graph
 
 end
 
+
+
 graph_d = Graph.new
 raw_data = graph_d.prepare_raw_data File.open("drosophila_PPI.txt", "r").each_line
 
@@ -803,7 +809,7 @@ prepared_array = graph_d.prepare_graph rest_of_graph
 
 graph_d.build_graph prepared_array
 
-degrees_d = graph_d.get_degrees prepared_array
+graph_d.get_degrees prepared_array
 graph_d.build_graph prepared_array
 graph_d.calculate_separators_in_graph
 
@@ -811,16 +817,16 @@ puts "Before edges which don't exist"
 edges_to_test = graph_d.get_all_edges_which_dont_exist_yet
 puts "#{edges_to_test.length} edges to test"
 puts "Doing Jaccard stuff now"
-best_edges = graph_d.predict_jaccard edges_to_test, num_of_edges_to_cut
-puts "Best edges from Jaccard:"
-puts "Best edges: #{best_edges}"
-puts "Correctly guessed edges: #{(best_edges | best_edges.reverse) & edges_to_guess }"
-puts "Rest of graph length: #{rest_of_graph.length}"
-# tp, fp, fn = graph_d.get_precision_and_recall_data best_edges, edges_to_guess
+best_edges = graph_d.predict_jaccard edges_to_test
+# puts "Best edges from Jaccard:"
+# puts "Best edges: #{best_edges}"
+puts "Correctly guessed edges: #{((best_edges | best_edges.map { |item| item.reverse }) & edges_to_guess).length }"
+# puts "Rest of graph length: #{rest_of_graph.length}"
+tp, fp, fn = graph_d.get_precision_and_recall_data best_edges, edges_to_guess
 # puts "tp: #{tp}"
 # puts "fp: #{fp}"
 # puts "fn: #{fn}"
-#
+
 # pr, rc = graph_d.calculate_precision_and_recall tp, fp, fn
 # puts "pr: #{pr}"
 # puts "rc: #{rc}"
