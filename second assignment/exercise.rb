@@ -824,7 +824,7 @@ puts "Correctly guessed edges: #{((best_edges | best_edges.map { |item| item.rev
 # puts "Rest of graph length: #{rest_of_graph.length}"
 tp, fp, fn = graph_d.get_precision_and_recall_data best_edges, edges_to_guess
 # puts "tp: #{tp}"
-# puts "fp: #{fp}"
+puts "fp: #{fp}"
 # puts "fn: #{fn}"
 
 # pr, rc = graph_d.calculate_precision_and_recall tp, fp, fn
