@@ -845,8 +845,9 @@ class Graph
   def complete_strategy reference_graph, tested_pairs=Set.new
     num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
     tested_pairs = Set.new
-    nodes_with_degree = []
-    queue = PQueue.new(nodes_with_degree) { |a,b| @degrees[a] > @degrees[b] }
+    nodes_with_degree_higher_than_zero = (0...num_of_nodes).to_a.map.with_index.sort.reverse.map(&:last)[-@degrees.count(0),-1]
+    queue = PQueue.new(nodes_with_degree_higher_than_zero) { |a,b| @degrees[a] > @degrees[b] }
+    # byebug
     # queue = @degrees.map.with_index.sort.reverse.map(&:last)[-@degrees.count(0),-1]
     until queue.empty?
       start_node = queue.shift
@@ -893,6 +894,7 @@ puts g_original.instance_variable_get(:@separators).length.to_s
 puts "Number of edges:"
 puts g_original.instance_variable_get(:@graph).length.to_s
 
+# puts "STRATEGY RANDOM"
 # sample = g_original.strip_graph_of_all_edges
 # num_of_tests_made = 50000
 # sample.instance_variable_set(:@res_file, File.open("random_results.txt", 'w+'))
@@ -913,6 +915,7 @@ puts g_original.instance_variable_get(:@graph).length.to_s
 # puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
 # # Graph::plot_stuff stuff_to_plot, scale='lin', title='Random', x_label="number of tests in thousands", y_label="found edges", style='lines'
 
+puts "STRATEGY COMPLETE"
 sample = g_original.strip_graph_of_all_edges
 num_of_tests_made = 50000
 sample.instance_variable_set(:@res_file, File.open("complete_results.txt", 'w+'))
