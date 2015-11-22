@@ -836,13 +836,13 @@ class Graph
         # puts "Edges in the graph: #{@graph.length/2}"
       end
     end
-    # byebug
+    return tested_pairs
   end
 
   # To do
   # .map.with_index.sort.map(&:last)
   # take tested pairs from random to complete
-  def complete_strategy reference_graph, num_of_tests, tested_pairs=Set.new
+  def complete_strategy reference_graph, tested_pairs=Set.new
     num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
     tested_pairs = Set.new
     nodes_with_degree = []
@@ -893,10 +893,31 @@ puts g_original.instance_variable_get(:@separators).length.to_s
 puts "Number of edges:"
 puts g_original.instance_variable_get(:@graph).length.to_s
 
+# sample = g_original.strip_graph_of_all_edges
+# num_of_tests_made = 50000
+# sample.instance_variable_set(:@res_file, File.open("random_results.txt", 'w+'))
+# sample.random_strategy g_original, num_of_tests_made
+# puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
+# stuff_to_plot = sample.extract_data_for_plotting
+# stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
+#
+# efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, num_of_tests_made
+# puts "Worst efficiency:\t#{efficiency_worst}"
+# puts "Best efficiency:\t#{efficiency_best}"
+# puts "Random Efficiency:\t#{efficiency_random}"
+# efficiency = sample.calculate_efficiency g_original, num_of_tests_made
+# puts "Efficiency:\t\t#{efficiency}"
+# normalized_efficiency = (efficiency - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+# normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+# puts "Normalized efficiency:\t#{normalized_efficiency}"
+# puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
+# # Graph::plot_stuff stuff_to_plot, scale='lin', title='Random', x_label="number of tests in thousands", y_label="found edges", style='lines'
+
 sample = g_original.strip_graph_of_all_edges
 num_of_tests_made = 50000
-sample.instance_variable_set(:@res_file, File.open("random_results.txt", 'w+'))
-sample.random_strategy g_original, num_of_tests_made
+sample.instance_variable_set(:@res_file, File.open("complete_results.txt", 'w+'))
+tested_pairs = sample.random_strategy g_original, num_of_tests_made
+sample.complete_strategy g_original, tested_pairs
 puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
 stuff_to_plot = sample.extract_data_for_plotting
 stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
@@ -912,32 +933,3 @@ normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(effic
 puts "Normalized efficiency:\t#{normalized_efficiency}"
 puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
 # Graph::plot_stuff stuff_to_plot, scale='lin', title='Random', x_label="number of tests in thousands", y_label="found edges", style='lines'
-
-# byebug
-# puts "Debugging"
-
-# all_connected_components = graph_d.get_all_connected_components
-# puts "Number of nodes:"
-# puts graph_d.instance_variable_get(:@separators).length.to_s
-# puts "Number of edges:"
-# puts graph_d.instance_variable_get(:@graph).length.to_s
-# puts "Number of connected components:"
-# puts all_connected_components.length.to_s
-# largest_component = all_connected_components[0]
-# size_of_largest_component = largest_component.length
-# puts "Size of the largest component:"
-# puts size_of_largest_component.to_s
-# num_isolated_nodes = graph_d.get_num_of_isolated_nodes
-# puts "Number of isolated nodes:"
-# puts num_isolated_nodes.to_s
-# avg_clustering_coefficient = graph_d.calculate_global_clustering_coefficient
-# puts "Average clustering coefficient:"
-# puts avg_clustering_coefficient.to_s
-# average_distance = graph_d.get_average_distance largest_component
-# puts "Average distance (dividing all distance by the total number of edges):"
-# puts average_distance.to_s
-#
-# degrees_dist = graph_d.get_distribution graph_d.instance_variable_get(:@degrees)
-# Graph::plot_stuff degrees_dist, 'log', 'drosophila degree distribution', 'node degree', 'number of nodes'
-# cumulative_distribution = graph_d.get_cumulative_distribution degrees_dist
-# Graph::plot_stuff cumulative_distribution, 'log', 'drosophila cumulative degree distribution', 'node degree', 'sum of nodes'
