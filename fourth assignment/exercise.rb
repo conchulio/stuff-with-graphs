@@ -4,6 +4,7 @@ require 'gnuplot'
 require 'set'
 require 'byebug'
 require 'vose'
+require 'pqueue'
 
 class Graph
 
@@ -43,7 +44,7 @@ class Graph
   end
 
   def get_average_degree
-    @degrees.inject(:+)/@degrees.length
+    @degrees.inject(:+).fdiv @degrees.length
   end
 
   def get_density
@@ -175,7 +176,7 @@ class Graph
         plot.xlabel x_label if x_label
         plot.ylabel y_label if y_label
 
-        if stuff_to_plot.is_a?(Hash)
+        if stuff_to_plot.is_a? Hash
           x = stuff_to_plot.keys
           y = stuff_to_plot.values
         else
@@ -261,48 +262,48 @@ class Graph
     true
   end
 
-  # def calculate_triangles_for_each_node
-  #   n = @separators.length
-  #   tr = Array.new n, 0
-  #   n.times do |u|
-  #     neighbors = get_neighbors u, @graph, @separators
-  #     neighbors.each do |v|
-  #       if u < v
-  #         list_U = get_neighbors u, @graph, @separators
-  #         list_V = get_neighbors v, @graph, @separators
-  #         i_u, i_v = 0, 0
-  #         while i_u < @degrees[u] && i_v < @degrees[v] && list_U[i_u] < u && list_V[i_v] < u
-  #           if list_U[i_u] < list_V[i_v]
-  #             i_u += 1
-  #           else
-  #             if list_U[i_u] > list_V[i_v]
-  #               i_v += 1
-  #             else
-  #               tr[u] += 1
-  #               tr[v] += 1
-  #               tr[list_U[i_u]] += 1
-  #               i_u += 1
-  #               i_v += 1
-  #             end
-  #           end
-  #         end
-  #       end
-  #     end
-  #   end
-  #   tr
-  # end
+  def calculate_triangles_for_each_node
+    n = @separators.length
+    tr = Array.new n, 0
+    n.times do |u|
+      neighbors = get_neighbors u, @graph, @separators
+      neighbors.each do |v|
+        if u < v
+          list_U = get_neighbors u, @graph, @separators
+          list_V = get_neighbors v, @graph, @separators
+          i_u, i_v = 0, 0
+          while i_u < @degrees[u] && i_v < @degrees[v] && list_U[i_u] < u && list_V[i_v] < u
+            if list_U[i_u] < list_V[i_v]
+              i_u += 1
+            else
+              if list_U[i_u] > list_V[i_v]
+                i_v += 1
+              else
+                tr[u] += 1
+                tr[v] += 1
+                tr[list_U[i_u]] += 1
+                i_u += 1
+                i_v += 1
+              end
+            end
+          end
+        end
+      end
+    end
+    tr
+  end
 
-  # def calculate_number_of_triplets_for_each_node
-  #   n = @separators.length
-  #   table = Array.new n, 0
-  #   n.times do |u|
-  #     neighbors = get_neighbors u, @graph, @separators
-  #     neighbors.each do |neighbor|
-  #       table[u] += get_neighbors(neighbor, @graph, @separators).length-1
-  #     end
-  #   end
-  #   table
-  # end
+  def calculate_number_of_triplets_for_each_node
+    n = @separators.length
+    table = Array.new n, 0
+    n.times do |u|
+      neighbors = get_neighbors u, @graph, @separators
+      neighbors.each do |neighbor|
+        table[u] += get_neighbors(neighbor, @graph, @separators).length-1
+      end
+    end
+    table
+  end
 
   def calculate_transitive_ratio
     triangles = calculate_triangles_for_each_node(graph, @separators, @degrees)
@@ -578,7 +579,7 @@ class Graph
   end
 
   def insert_edge start_node, end_node, revert=true
-    # puts "insert edge"
+    # puts "insert edge revert=#{revert}"
     neighbors = get_neighbors start_node
     last_neighbor_index = 0
     neighbors.length.times do |current_node_index|
@@ -590,17 +591,15 @@ class Graph
     edge_index = @separators[start_node]+last_neighbor_index
     @degrees[start_node] += 1
     @graph.insert edge_index, end_node
-    new_separators = []
-    @separators.each do |separator|
-      if separator > edge_index
-        separator += 1
+    @separators.length.times do |separator_index|
+      if separator_index > start_node
+        @separators[separator_index] += 1
       end
-      new_separators << separator
     end
-    @separators = new_separators
     if revert
       insert_edge end_node, start_node, false
     end
+    # byebug
   end
 
   def insert_node
@@ -708,53 +707,6 @@ class Graph
     puts "Graph is sane!"
   end
 
-  def jaccard_score a, b
-    neighbors_a = get_neighbors a
-    neighbors_b = get_neighbors b
-    return (neighbors_a & neighbors_b).length.fdiv((neighbors_a | neighbors_b).length)
-  end
-
-  def get_all_edges_which_dont_exist_yet
-    result = []
-    @separators.length.times do |a|
-      neighbors_a = get_neighbors a
-      neighbors_a.each do |b|
-        neighbors_b = get_neighbors b
-        neighbors_b.each do |c|
-          if a < c && !neighbors_a.include?(c)
-            result << [a, c]
-          end
-        end
-      end
-    end
-    result.uniq
-  end
-
-  def predict_jaccard edges
-    result = []
-    puts "Starting testing"
-    edges.each do |edge|
-      # byebug
-      result << [jaccard_score(edge[0], edge[1]), edge]
-    end
-    puts "Starting sorting"
-    result.sort! do |x, y|
-      if x[0] < y[0]
-        +1
-      elsif x[0] == y[0]
-        0
-      else
-        -1
-      end
-    end
-    # byebug
-    # result_with_one = result.select do |item|
-    #   item[0] == 1.0
-    # end
-    # puts "result_with_one.length: #{result_with_one.length}"
-    result.map { |item| item[1] }
-  end
-
   def get_precision_and_recall_data predictions, edges_to_guess
     edges_to_guess = Set.new(edges_to_guess)
     # puts "Rest of graph: #{edges_to_guess}"
@@ -796,45 +748,173 @@ class Graph
     return pr, rc
   end
 
+  def strip_graph_of_all_edges
+    sample = Graph.new
+    sample.instance_variable_set(:@degrees, @degrees.map{ |degree| 0 })
+    sample.instance_variable_set(:@separators, @separators.map{ |separator| 0 })
+    sample.instance_variable_set(:@graph, [])
+    sample
+  end
+
+  def write_to_res_file start_node, end_node, num_of_tests_made
+    @res_file.puts "(#{num_of_tests_made},#{start_node},#{end_node})"
+    # puts "(#{num_of_tests_made},#{start_node},#{end_node})"
+  end
+
+  # To do: Implement efficiency of pure random strategy
+  def analyse reference_graph, num_of_tests_made
+    num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
+    num_of_edges = reference_graph.instance_variable_get(:@graph).length/2
+    possible_edges = num_of_nodes*(num_of_nodes-1)/2
+    # puts "More tests made than there are possible edges!" if num_of_tests_made > possible_edges
+    efficiency_worst = 0
+    num_of_tests_made.times do |i|
+      thing_to_add = [[i+1-(possible_edges-num_of_edges), num_of_edges].min, 0].max
+      # puts thing_to_add
+      efficiency_worst += thing_to_add
+    end
+    efficiency_best = 0
+    num_of_tests_made.times do |i|
+      thing_to_add = [i+1, num_of_edges].min
+      # puts "thing_to_add: #{thing_to_add}"
+      # puts "i+1: #{i+1}"
+      # puts "num_of_edges: #{num_of_edges}"
+      efficiency_best += thing_to_add
+    end
+    efficiency_random = 0
+    number_of_discovered_edges = 0
+    num_of_tests_made.times do |i|
+      number_of_discovered_edges += (num_of_edges-number_of_discovered_edges).fdiv(possible_edges-i)
+      # puts "thing_to_add: #{thing_to_add}"
+      # puts "i+1: #{i+1}"
+      # puts "num_of_edges: #{num_of_edges}"
+      efficiency_random += number_of_discovered_edges
+    end
+    return efficiency_worst, efficiency_best, efficiency_random
+  end
+
+  def calculate_efficiency reference_graph, num_of_tests_made
+    num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
+    num_of_edges = reference_graph.instance_variable_get(:@graph).length/2
+    lines = IO.readlines(@res_file)
+    num_of_found_edges = lines.length
+    efficiency_worst, efficiency_best = analyse reference_graph, num_of_tests_made
+    efficiency = 0
+    current_line = 0
+    current_thing_to_add = 0
+    num_of_tests_made.times do |i|
+      i += 1
+      matched_stuff = /\d+/.match(lines[current_line])
+      next unless matched_stuff
+      filtered_number = matched_stuff[0].to_i
+      # puts filtered_number
+      if i == filtered_number
+        current_thing_to_add = filtered_number
+        current_line += 1
+        efficiency += current_thing_to_add
+      end
+    end
+    return efficiency
+  end
+
+  def random_strategy reference_graph, num_of_tests
+    num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
+    tested_pairs = Set.new
+    num_of_tests.times do |test_num|
+      start_node, end_node = nil, nil
+      loop do
+        start_node = rand num_of_nodes
+        end_node = rand num_of_nodes
+        break unless tested_pairs.include?([start_node, end_node]) || tested_pairs.include?([end_node, start_node])
+      end
+      edge_exists = reference_graph.get_edge_index_from_nodes start_node, end_node
+      # puts "Edge exists: #{edge_exists}"
+      tested_pairs << [start_node, end_node]
+      if edge_exists
+        insert_edge start_node, end_node
+        write_to_res_file start_node, end_node, test_num
+        # puts "Edges in the graph: #{@graph.length/2}"
+      end
+    end
+    # byebug
+  end
+
+  # To do
+  # .map.with_index.sort.map(&:last)
+  # take tested pairs from random to complete
+  def complete_strategy reference_graph, num_of_tests, tested_pairs=Set.new
+    num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
+    tested_pairs = Set.new
+    nodes_with_degree = []
+    queue = PQueue.new(nodes_with_degree) { |a,b| @degrees[a] > @degrees[b] }
+    # queue = @degrees.map.with_index.sort.reverse.map(&:last)[-@degrees.count(0),-1]
+    until queue.empty?
+      start_node = queue.shift
+      num_of_nodes.times do |end_node|
+        next if tested_pairs.include?([start_node, end_node]) || tested_pairs.include?([end_node, start_node])
+        edge_exists = reference_graph.get_edge_index_from_nodes start_node, end_node
+        # puts "Edge exists: #{edge_exists}"
+        tested_pairs << [start_node, end_node]
+        if edge_exists && @degrees[end_node] == 0
+          insert_edge start_node, end_node
+          queue << end_node
+          queue.send :sort!
+          write_to_res_file start_node, end_node, test_num
+          # puts "Edges in the graph: #{@graph.length/2}"
+        end
+      end
+    end
+    # byebug
+  end
+
+  def extract_data_for_plotting
+    x_axis = []
+    y_axis = []
+    found_edges_counter = 0
+    # byebug
+    @res_file.seek 0
+    @res_file.each do |line|
+      # puts "spam and eggs"
+      found_edges_counter += 1
+      test_num = (/\d+/.match line)[0].to_i
+      x_axis << test_num
+      y_axis << found_edges_counter
+    end
+    return x_axis, y_axis
+  end
+
 end
 
+g_original = Graph.new
+prepared_array = g_original.prepare_data File.open("flickr-test", "r").each_line
+g_original.build_graph prepared_array
+puts "Number of nodes:"
+puts g_original.instance_variable_get(:@separators).length.to_s
+puts "Number of edges:"
+puts g_original.instance_variable_get(:@graph).length.to_s
 
+sample = g_original.strip_graph_of_all_edges
+num_of_tests_made = 50000
+sample.instance_variable_set(:@res_file, File.open("random_results.txt", 'w+'))
+sample.random_strategy g_original, num_of_tests_made
+puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
+stuff_to_plot = sample.extract_data_for_plotting
+stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
 
-graph_d = Graph.new
-raw_data = graph_d.prepare_raw_data File.open("drosophila_PPI.txt", "r").each_line
+efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, num_of_tests_made
+puts "Worst efficiency:\t#{efficiency_worst}"
+puts "Best efficiency:\t#{efficiency_best}"
+puts "Random Efficiency:\t#{efficiency_random}"
+efficiency = sample.calculate_efficiency g_original, num_of_tests_made
+puts "Efficiency:\t\t#{efficiency}"
+normalized_efficiency = (efficiency - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+puts "Normalized efficiency:\t#{normalized_efficiency}"
+puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
+# Graph::plot_stuff stuff_to_plot, scale='lin', title='Random', x_label="number of tests in thousands", y_label="found edges", style='lines'
 
-puts "Raw data length: #{raw_data.length}"
-num_of_edges_to_cut = 2000
-edges_to_guess = raw_data.sample num_of_edges_to_cut
-puts "Length of edges to guess is #{edges_to_guess.length}"
-rest_of_graph = raw_data - edges_to_guess
-prepared_array = graph_d.prepare_graph rest_of_graph
-
-graph_d.build_graph prepared_array
-
-graph_d.get_degrees prepared_array
-graph_d.build_graph prepared_array
-graph_d.calculate_separators_in_graph
-
-puts "Before edges which don't exist"
-edges_to_test = graph_d.get_all_edges_which_dont_exist_yet
-puts "#{edges_to_test.length} edges to test"
-puts "Doing Jaccard stuff now"
-best_edges = graph_d.predict_jaccard edges_to_test
-# puts "Best edges from Jaccard:"
-# puts "Best edges: #{best_edges}"
-puts "Correctly guessed edges: #{((best_edges | best_edges.map { |item| item.reverse }) & edges_to_guess).length }"
-# puts "Rest of graph length: #{rest_of_graph.length}"
-tp, fp, fn = graph_d.get_precision_and_recall_data best_edges, edges_to_guess
-Graph::plot_stuff [fp, tp], scale='lin', title='Jaccard tp vs fp', x_label="false positives", y_label="true positives", style='lines'
-# puts "tp: #{tp}"
-# puts "fp: #{fp[0...100]}"
-# puts "fn: #{fn[0...100]}"
-
-pr, rc = graph_d.calculate_precision_and_recall tp, fp, fn
-Graph::plot_stuff [rc, pr], scale='lin', title='Jaccard Precision vs Recall', x_label="Recall", y_label="Precision", style='lines'
-# puts "pr: #{pr}"
-# puts "rc: #{rc}"
+# byebug
+# puts "Debugging"
 
 # all_connected_components = graph_d.get_all_connected_components
 # puts "Number of nodes:"
