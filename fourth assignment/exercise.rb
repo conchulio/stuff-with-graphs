@@ -784,11 +784,13 @@ class Graph
     efficiency_random = 0
     number_of_discovered_edges = 0
     num_of_tests_made.times do |i|
+      # break if possible_edges-i == 0
       number_of_discovered_edges += (num_of_edges-number_of_discovered_edges).fdiv(possible_edges-i)
       # puts "thing_to_add: #{thing_to_add}"
       # puts "i+1: #{i+1}"
       # puts "num_of_edges: #{num_of_edges}"
       efficiency_random += number_of_discovered_edges
+      # puts "Number of tests: "efficiency_random
     end
     return efficiency_worst, efficiency_best, efficiency_random
   end
@@ -818,54 +820,69 @@ class Graph
   end
 
   def random_strategy reference_graph, num_of_tests
+    all_edges = []
     num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
-    tested_pairs = Set.new
-    num_of_tests.times do |test_num|
-      start_node, end_node = nil, nil
-      loop do
-        start_node = rand num_of_nodes
-        end_node = rand num_of_nodes
-        break unless tested_pairs.include?([start_node, end_node]) || tested_pairs.include?([end_node, start_node])
+    num_of_nodes.times do |node|
+      num_of_nodes.times do |other_node|
+        all_edges << [node, other_node] if node < other_node
       end
-      edge_exists = reference_graph.get_edge_index_from_nodes start_node, end_node
-      # puts "Edge exists: #{edge_exists}"
-      tested_pairs << [start_node, end_node]
+    end
+    selected_edges = all_edges.sample num_of_tests
+    test_num = 0
+    selected_edges.each do |edge|
+      test_num += 1
+      start_node = edge[0]
+      end_node = edge[1]
+      edge_exists = reference_graph.get_edge_index_from_nodes(start_node, end_node) || reference_graph.get_edge_index_from_nodes(end_node, start_node)
       if edge_exists
         insert_edge start_node, end_node
         write_to_res_file start_node, end_node, test_num
         # puts "Edges in the graph: #{@graph.length/2}"
       end
     end
-    return tested_pairs
+    return selected_edges.to_set
   end
 
-  # To do
-  # .map.with_index.sort.map(&:last)
-  # take tested pairs from random to complete
-  def complete_strategy reference_graph, tested_pairs=Set.new
+  def complete_strategy reference_graph, tested_pairs, num_of_random_tests, when_to_stop
     num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
-    tested_pairs = Set.new
-    nodes_with_degree_higher_than_zero = (0...num_of_nodes).to_a.map.with_index.sort.reverse.map(&:last)[-@degrees.count(0),-1]
-    queue = PQueue.new(nodes_with_degree_higher_than_zero) { |a,b| @degrees[a] > @degrees[b] }
+    num_of_links = reference_graph.instance_variable_get(:@graph).length/2
+    nodes_with_degree_higher_than_zero = @degrees.map.with_index.sort.reverse.map(&:last)[0...@degrees.length-@degrees.count(0)]
+    block_for_sorting = proc { |a,b| -(@degrees[a] <=> @degrees[b]) }
+    queue = nodes_with_degree_higher_than_zero.sort &block_for_sorting
     # byebug
-    # queue = @degrees.map.with_index.sort.reverse.map(&:last)[-@degrees.count(0),-1]
-    until queue.empty?
-      start_node = queue.shift
-      num_of_nodes.times do |end_node|
-        next if tested_pairs.include?([start_node, end_node]) || tested_pairs.include?([end_node, start_node])
-        edge_exists = reference_graph.get_edge_index_from_nodes start_node, end_node
-        # puts "Edge exists: #{edge_exists}"
-        tested_pairs << [start_node, end_node]
-        if edge_exists && @degrees[end_node] == 0
-          insert_edge start_node, end_node
-          queue << end_node
-          queue.send :sort!
-          write_to_res_file start_node, end_node, test_num
-          # puts "Edges in the graph: #{@graph.length/2}"
+    test_num = num_of_random_tests
+    catch (:enough_edges_found) do
+      until queue.empty?
+        if num_of_links == @graph.length/2
+          puts "Found all links!"
+          break
+        end
+        # puts "Length of queue: #{queue.length}"
+        start_node = queue.shift
+        (start_node+1...num_of_nodes).each do |end_node|
+          next if tested_pairs.include?([start_node, end_node])
+          throw :enough_edges_found if test_num >= when_to_stop
+          edge_exists = reference_graph.get_edge_index_from_nodes(start_node, end_node) || reference_graph.get_edge_index_from_nodes(end_node, start_node)
+          test_num += 1
+          # puts "Edge exists: #{edge_exists}"
+          tested_pairs << [start_node, end_node]
+          if edge_exists
+            # puts "Edge exists"
+            insert_edge start_node, end_node
+            write_to_res_file start_node, end_node, test_num
+            # This is tricky! The condition checks if the degree of the node is 0
+            # But because we just updated the graph 'insert_edge' already increased
+            # the degree of the node so we have to check for 1.
+            if @degrees[end_node] == 1
+              # puts "Added new node"
+              queue << end_node
+            end
+            queue.sort &block_for_sorting
+          end
         end
       end
     end
-    # byebug
+    return test_num, tested_pairs
   end
 
   def extract_data_for_plotting
@@ -892,40 +909,22 @@ g_original.build_graph prepared_array
 puts "Number of nodes:"
 puts g_original.instance_variable_get(:@separators).length.to_s
 puts "Number of edges:"
-puts g_original.instance_variable_get(:@graph).length.to_s
-
-# puts "STRATEGY RANDOM"
-# sample = g_original.strip_graph_of_all_edges
-# num_of_tests_made = 50000
-# sample.instance_variable_set(:@res_file, File.open("random_results.txt", 'w+'))
-# sample.random_strategy g_original, num_of_tests_made
-# puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
-# stuff_to_plot = sample.extract_data_for_plotting
-# stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
-#
-# efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, num_of_tests_made
-# puts "Worst efficiency:\t#{efficiency_worst}"
-# puts "Best efficiency:\t#{efficiency_best}"
-# puts "Random Efficiency:\t#{efficiency_random}"
-# efficiency = sample.calculate_efficiency g_original, num_of_tests_made
-# puts "Efficiency:\t\t#{efficiency}"
-# normalized_efficiency = (efficiency - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
-# normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
-# puts "Normalized efficiency:\t#{normalized_efficiency}"
-# puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
-# # Graph::plot_stuff stuff_to_plot, scale='lin', title='Random', x_label="number of tests in thousands", y_label="found edges", style='lines'
-
-puts "STRATEGY COMPLETE"
+puts (g_original.instance_variable_get(:@graph).length/2).to_s
+puts "Possible edges:"
+puts (g_original.instance_variable_get(:@separators).length*(g_original.instance_variable_get(:@separators).length-1)/2).to_s
+puts "STRATEGY RANDOM"
 sample = g_original.strip_graph_of_all_edges
 num_of_tests_made = 50000
-sample.instance_variable_set(:@res_file, File.open("complete_results.txt", 'w+'))
+# num_of_tests_made = 113050
+sample.instance_variable_set(:@res_file, File.open("random_results.txt", 'w+'))
 tested_pairs = sample.random_strategy g_original, num_of_tests_made
-sample.complete_strategy g_original, tested_pairs
 puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
+puts "Tested pairs:\t\t#{tested_pairs.length}"
 stuff_to_plot = sample.extract_data_for_plotting
 stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
 
 efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, num_of_tests_made
+puts "Number of tests made:\t#{num_of_tests_made}"
 puts "Worst efficiency:\t#{efficiency_worst}"
 puts "Best efficiency:\t#{efficiency_best}"
 puts "Random Efficiency:\t#{efficiency_random}"
@@ -936,3 +935,27 @@ normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(effic
 puts "Normalized efficiency:\t#{normalized_efficiency}"
 puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
 # Graph::plot_stuff stuff_to_plot, scale='lin', title='Random', x_label="number of tests in thousands", y_label="found edges", style='lines'
+
+puts "STRATEGY COMPLETE"
+# sample.instance_variable_set(:@res_file, File.open("complete_results.txt", 'w+'))
+when_to_stop = 80000
+num_of_tests_made, tested_pairs = sample.complete_strategy g_original, tested_pairs, num_of_tests_made, when_to_stop
+puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
+puts "Tested pairs:\t\t#{tested_pairs.length}"
+stuff_to_plot = sample.extract_data_for_plotting
+stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
+
+efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, num_of_tests_made
+puts "Number of tests made:\t#{num_of_tests_made}"
+puts "Worst efficiency:\t#{efficiency_worst}"
+puts "Best efficiency:\t#{efficiency_best}"
+puts "Random Efficiency:\t#{efficiency_random}"
+efficiency = sample.calculate_efficiency g_original, num_of_tests_made
+puts "Efficiency:\t\t#{efficiency}"
+normalized_efficiency = (efficiency - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+puts "Normalized efficiency:\t#{normalized_efficiency}"
+puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
+Graph::plot_stuff stuff_to_plot, scale='lin', title='Complete', x_label="number of tests in thousands", y_label="found edges", style='lines'
+# byebug
+# puts "Debug"
