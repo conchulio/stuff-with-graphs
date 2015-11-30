@@ -193,6 +193,7 @@ class Graph
         end
         plot.arbitrary_lines << "set terminal png size 600,600 enhanced font \"Helvetica,15\""
         plot.arbitrary_lines << "set output \""+title+".png\""
+        # plot.arbitrary_lines << "set xtics 0,10000,#{x[-1]}"
 
         plot.data << Gnuplot::DataSet.new( [x, y] ) do |ds|
           ds.with = "points" if style == 'points'
@@ -843,46 +844,223 @@ class Graph
     return selected_edges.to_set
   end
 
-  def complete_strategy reference_graph, tested_pairs, num_of_random_tests, when_to_stop
+  def complete_strategy reference_graph, tested_pairs, when_to_stop
     num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
     num_of_links = reference_graph.instance_variable_get(:@graph).length/2
     nodes_with_degree_higher_than_zero = @degrees.map.with_index.sort.reverse.map(&:last)[0...@degrees.length-@degrees.count(0)]
-    block_for_sorting = proc { |a,b| -(@degrees[a] <=> @degrees[b]) }
+    block_for_sorting = lambda { |a,b| -(@degrees[a] <=> @degrees[b]) }
     queue = nodes_with_degree_higher_than_zero.sort &block_for_sorting
     # byebug
-    test_num = num_of_random_tests
-    catch (:enough_edges_found) do
+    # test_num = tested_pairs.length
+    # move_up = lambda { |original_position|
+    #   # puts "original_position: #{original_position}"
+    #   # puts "queue.length: #{queue.length}"
+    #   position = original_position
+    #   puts "#{@degrees[queue[position-1]]} < #{@degrees[queue[original_position]]}"
+    #   while @degrees[queue[position-1]] < @degrees[queue[original_position]] && position > 0
+    #     position -= 1
+    #     puts "Ahhhhh"
+    #   end
+    #   if position != original_position
+    #     puts "move up"
+    #     queue[position], queue[original_position] = queue[original_position], queue[position]
+    #   end
+    #   # puts "position: #{position}"
+    #   return position
+    # }
+    catch :enough_edges_found do
       until queue.empty?
-        if num_of_links == @graph.length/2
-          puts "Found all links!"
-          break
-        end
         # puts "Length of queue: #{queue.length}"
+        # puts "#{queue.map { |item| @degrees[item] }}"
         start_node = queue.shift
+        # start_node = queue.pop
         (start_node+1...num_of_nodes).each do |end_node|
-          next if tested_pairs.include?([start_node, end_node])
-          throw :enough_edges_found if test_num >= when_to_stop
-          edge_exists = reference_graph.get_edge_index_from_nodes(start_node, end_node) || reference_graph.get_edge_index_from_nodes(end_node, start_node)
-          test_num += 1
+          next if tested_pairs.include? [start_node, end_node]
+          throw :enough_edges_found if tested_pairs.length >= when_to_stop
+          edge_exists = reference_graph.get_edge_index_from_nodes(start_node, end_node)# || reference_graph.get_edge_index_from_nodes(end_node, start_node)
+          # test_num += 1
           # puts "Edge exists: #{edge_exists}"
           tested_pairs << [start_node, end_node]
           if edge_exists
             # puts "Edge exists"
             insert_edge start_node, end_node
-            write_to_res_file start_node, end_node, test_num
+            write_to_res_file start_node, end_node, tested_pairs.length
             # This is tricky! The condition checks if the degree of the node is 0
             # But because we just updated the graph 'insert_edge' already increased
             # the degree of the node so we have to check for 1.
             if @degrees[end_node] == 1
               # puts "Added new node"
               queue << end_node
+            else
+              # puts "Don't sort"
+              queue.sort! &block_for_sorting
             end
-            queue.sort &block_for_sorting
+            # move_up.call queue.length-1
           end
         end
       end
     end
-    return test_num, tested_pairs
+    return tested_pairs
+  end
+
+  def tbf_strategy reference_graph, tested_pairs, when_to_stop
+    # AHH only for debugging
+    # random_tested_pairs = tested_pairs.dup
+    # debugging_skip_counter = 0
+    # debugging_next_not_depleted_index = nil
+    num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
+    num_of_links = reference_graph.instance_variable_get(:@graph).length/2
+    # sorted_nodes = @degrees.map.with_index.sort.reverse.map(&:last)[0...@degrees.length-@degrees.count(0)]
+    sorted_nodes = @degrees.map.with_index.sort.reverse.map(&:last)
+    queue = []
+    sorted_nodes.each do |node|
+      queue << node
+    end
+    position_of_each_node = {}
+    rightmost_p2s_per_node = {}
+    sorted_nodes.length.times do |index|
+      position_of_each_node[queue[index]] = index
+      rightmost_p2s_per_node[queue[index]] = nil
+    end
+    leftmost_node_not_yet_finished = queue[0]
+    # puts "#{queue}"
+    # test_num = tested_pairs.length
+    p1 = 0
+    p2 = 1
+    # Initialization
+    rightmost_p2s_per_node[queue[p1]] = queue[p2]
+    advance_pointers = lambda {
+      # puts "advance pointers"
+      rightmost_p2s_per_node[queue[p1]] = queue[p2]
+      if p2 == queue.length-1
+        loop do
+          leftmost_node_not_yet_finished = queue[position_of_each_node[leftmost_node_not_yet_finished]+1]
+          # puts "increment"
+          # puts "rightmost: #{position_of_each_node[rightmost_p2s_per_node[leftmost_node_not_yet_finished]]}"
+          break if !rightmost_p2s_per_node[leftmost_node_not_yet_finished] ||
+                   position_of_each_node[rightmost_p2s_per_node[leftmost_node_not_yet_finished]] < queue.length-1
+        end
+        disable_advancing_p2 = true
+        # puts "go back to the beginning"
+      else
+        disable_advancing_p2 = false
+      end
+      leftmost_rightmost = rightmost_p2s_per_node[leftmost_node_not_yet_finished]
+      if leftmost_rightmost
+        position_for_stepping_back = position_of_each_node[leftmost_rightmost]+1
+      else
+        position_for_stepping_back = position_of_each_node[leftmost_node_not_yet_finished]+1
+      end
+      sum_when_stepping_back = @degrees[queue[position_of_each_node[leftmost_node_not_yet_finished]]] +
+                               @degrees[queue[position_for_stepping_back]]
+      if disable_advancing_p2
+        sum_when_advancing_p2 = -1
+      else
+        sum_when_advancing_p2 = @degrees[queue[p1]]+@degrees[queue[p2+1]]
+      end
+      # Maybe check if rightmost is already defined otherwise just use p1+2
+      next_not_depleted_index = p1
+      loop do
+        next_not_depleted_index += 1
+        rightmost = rightmost_p2s_per_node[queue[next_not_depleted_index]]
+        break if !rightmost || position_of_each_node[rightmost] < queue.length-1
+      end
+      # debugging_next_not_depleted_index = next_not_depleted_index
+      # next_not_depleted_index += 1
+      if rightmost_p2s_per_node[queue[next_not_depleted_index]]
+        position_when_advancing = [next_not_depleted_index+1, position_of_each_node[rightmost_p2s_per_node[queue[next_not_depleted_index]]]+1].max
+      else
+        position_when_advancing = next_not_depleted_index+1
+      end
+      # puts "new_p1=#{p1}, new_p2=#{p2}"
+      # puts "degrees: #{(0...30).to_a.map { |num| queue[num][1] }}"
+      # puts "rightmost_p2s_per_node: #{(0...30).to_a.map { |num| position_of_each_node[rightmost_p2s_per_node[queue[num]]] }}"
+      # puts "leftmost_node: #{position_of_each_node[leftmost_node_not_yet_finished]}"
+      # puts "next_not_depleted_index: #{next_not_depleted_index}"
+      sum_when_advancing_p1 = @degrees[queue[next_not_depleted_index]]+
+                              @degrees[queue[position_when_advancing]]
+      all_sums = [sum_when_stepping_back, sum_when_advancing_p2, sum_when_advancing_p1]
+      max_index = all_sums.index all_sums.max
+      case max_index
+      when 0
+        # puts "case 0"
+        p1 = position_of_each_node[leftmost_node_not_yet_finished]
+        p2 = position_of_each_node[rightmost_p2s_per_node[leftmost_node_not_yet_finished]]+1
+      when 1
+        # puts "case 1"
+        p2 += 1
+      when 2
+        # puts "case 2"
+        p1 += 1
+        p2 = position_when_advancing
+      end
+    }
+    move_up = lambda { |original_position, is_p1=false|
+      # puts "original_position: #{original_position}"
+      position = original_position
+      while @degrees[queue[position-1]] < @degrees[queue[original_position]] && position > 0
+        position -= 1
+      end
+      if position != original_position
+        # puts "move up"
+        position_of_each_node[queue[position]] = original_position
+        position_of_each_node[queue[original_position]] = position
+        queue[position], queue[original_position] = queue[original_position], queue[position]
+        if is_p1 && position_of_each_node[leftmost_node_not_yet_finished] > position
+          # puts "changing leftmost_node_not_yet_finished"
+          leftmost_node_not_yet_finished = queue[position]
+        end
+      # else
+        # puts "don't move up"
+      end
+      # puts "position: #{position}"
+      return position
+    }
+    while p1 < queue.length-1 && tested_pairs.length < when_to_stop
+      # puts ""
+      # puts "queue.length=#{queue.length}"
+      # puts "p1=#{p1}, p2=#{p2}"
+      # puts "#{queue[0...10]}"
+      start_node = queue[p1]
+      end_node = queue[p2]
+      # puts "sum of degrees: #{queue[p1][1]+queue[p2][1]}"
+      if start_node < end_node
+        test_tuple = [start_node, end_node]
+      else
+        test_tuple = [end_node, start_node]
+      end
+      if tested_pairs.include? test_tuple
+        # puts "already tested pair"
+        advance_pointers.call
+        # debugging_skip_counter += 1 if !random_tested_pairs.include? test_tuple
+        # puts "skip"
+        next
+      end
+      edge_exists = reference_graph.get_edge_index_from_nodes(start_node, end_node)# || reference_graph.get_edge_index_from_nodes(end_node, start_node)
+      # test_num += 1
+      # puts "Edge exists: #{edge_exists}"
+      tested_pairs << test_tuple
+      if edge_exists
+        # puts "Edge exists"
+        insert_edge start_node, end_node
+        write_to_res_file start_node, end_node, tested_pairs.length
+        # This is tricky! The condition checks if the degree of the node is 0
+        # But because we just updated the graph 'insert_edge' already increased
+        # the degree of the node so we have to check for 1.
+        # queue[p1][1] += 1
+        # queue[p2][1] += 1
+        p1 = move_up.call p1, is_p1=true
+        p2 = move_up.call p2
+      end
+      advance_pointers.call
+    end
+    # puts "degrees: #{(0...queue.length).to_a.map { |num| queue[num][1] }}"
+    # puts "rightmost_p2s_per_node: #{(0...queue.length).to_a.map { |num| position_of_each_node[rightmost_p2s_per_node[queue[num]]] }}"
+    # puts "index of 365: #{((0...queue.length).to_a.map { |num| position_of_each_node[rightmost_p2s_per_node[queue[num]]]}).index 365}"
+    # puts "leftmost_node: #{position_of_each_node[leftmost_node_not_yet_finished]}"
+    # puts "next_not_depleted_index: #{debugging_next_not_depleted_index}"
+    # puts "skip_counter: #{debugging_skip_counter}"
+    return tested_pairs
   end
 
   def extract_data_for_plotting
@@ -903,6 +1081,8 @@ class Graph
 
 end
 
+srand 1234
+
 g_original = Graph.new
 prepared_array = g_original.prepare_data File.open("flickr-test", "r").each_line
 g_original.build_graph prepared_array
@@ -912,7 +1092,8 @@ puts "Number of edges:"
 puts (g_original.instance_variable_get(:@graph).length/2).to_s
 puts "Possible edges:"
 puts (g_original.instance_variable_get(:@separators).length*(g_original.instance_variable_get(:@separators).length-1)/2).to_s
-puts "STRATEGY RANDOM"
+
+puts "\nSTRATEGY RANDOM"
 sample = g_original.strip_graph_of_all_edges
 num_of_tests_made = 50000
 # num_of_tests_made = 113050
@@ -923,39 +1104,56 @@ puts "Tested pairs:\t\t#{tested_pairs.length}"
 stuff_to_plot = sample.extract_data_for_plotting
 stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
 
-efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, num_of_tests_made
-puts "Number of tests made:\t#{num_of_tests_made}"
+efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, tested_pairs.length
 puts "Worst efficiency:\t#{efficiency_worst}"
 puts "Best efficiency:\t#{efficiency_best}"
 puts "Random Efficiency:\t#{efficiency_random}"
-efficiency = sample.calculate_efficiency g_original, num_of_tests_made
+efficiency = sample.calculate_efficiency g_original, tested_pairs.length
 puts "Efficiency:\t\t#{efficiency}"
 normalized_efficiency = (efficiency - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
 normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
 puts "Normalized efficiency:\t#{normalized_efficiency}"
 puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
-# Graph::plot_stuff stuff_to_plot, scale='lin', title='Random', x_label="number of tests in thousands", y_label="found edges", style='lines'
+# Graph::plot_stuff stuff_to_plot, scale='lin', title='Random strategy', x_label="number of tests", y_label="found edges", style='lines'
 
-puts "STRATEGY COMPLETE"
+# puts "\nSTRATEGY COMPLETE"
+# # sample.instance_variable_set(:@res_file, File.open("complete_results.txt", 'w+'))
+# when_to_stop = 100000
+# tested_pairs = sample.complete_strategy g_original, tested_pairs, when_to_stop
+# puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
+# puts "Tested pairs:\t\t#{tested_pairs.length}"
+# stuff_to_plot = sample.extract_data_for_plotting
+# # stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
+#
+# efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, tested_pairs.length
+# puts "Worst efficiency:\t#{efficiency_worst}"
+# puts "Best efficiency:\t#{efficiency_best}"
+# puts "Random Efficiency:\t#{efficiency_random}"
+# efficiency = sample.calculate_efficiency g_original, tested_pairs.length
+# puts "Efficiency:\t\t#{efficiency}"
+# normalized_efficiency = (efficiency - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+# normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+# puts "Normalized efficiency:\t#{normalized_efficiency}"
+# puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
+# Graph::plot_stuff stuff_to_plot, scale='lin', title='Complete strategy', x_label="number of tests", y_label="found edges", style='lines'
+
+puts "\nSTRATEGY TBF"
 # sample.instance_variable_set(:@res_file, File.open("complete_results.txt", 'w+'))
 when_to_stop = 80000
-num_of_tests_made, tested_pairs = sample.complete_strategy g_original, tested_pairs, num_of_tests_made, when_to_stop
+tested_pairs = sample.tbf_strategy g_original, tested_pairs, when_to_stop
 puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
 puts "Tested pairs:\t\t#{tested_pairs.length}"
 stuff_to_plot = sample.extract_data_for_plotting
-stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
+# stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
 
-efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, num_of_tests_made
-puts "Number of tests made:\t#{num_of_tests_made}"
+efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, tested_pairs.length
 puts "Worst efficiency:\t#{efficiency_worst}"
 puts "Best efficiency:\t#{efficiency_best}"
 puts "Random Efficiency:\t#{efficiency_random}"
-efficiency = sample.calculate_efficiency g_original, num_of_tests_made
+efficiency = sample.calculate_efficiency g_original, tested_pairs.length
 puts "Efficiency:\t\t#{efficiency}"
 normalized_efficiency = (efficiency - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
 normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
 puts "Normalized efficiency:\t#{normalized_efficiency}"
 puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
-Graph::plot_stuff stuff_to_plot, scale='lin', title='Complete', x_label="number of tests in thousands", y_label="found edges", style='lines'
-# byebug
-# puts "Debug"
+Graph::plot_stuff stuff_to_plot, scale='lin', title='TBF strategy', x_label="number of tests", y_label="found edges", style='lines'
