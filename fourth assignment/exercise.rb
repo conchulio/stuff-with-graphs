@@ -820,12 +820,13 @@ class Graph
     return efficiency
   end
 
-  def random_strategy reference_graph, num_of_tests
+  def random_strategy reference_graph, num_of_tests, edges_already_tested=[].to_set
     all_edges = []
     num_of_nodes = reference_graph.instance_variable_get(:@degrees).length
     num_of_nodes.times do |node|
       num_of_nodes.times do |other_node|
-        all_edges << [node, other_node] if node < other_node
+        new_edge = [node, other_node]
+        all_edges << new_edge if node < other_node && !edges_already_tested.include? new_edge
       end
     end
     selected_edges = all_edges.sample num_of_tests
@@ -973,8 +974,8 @@ class Graph
         position_when_advancing = next_not_depleted_index+1
       end
       # puts "new_p1=#{p1}, new_p2=#{p2}"
-      # puts "degrees: #{(0...30).to_a.map { |num| queue[num][1] }}"
-      # puts "rightmost_p2s_per_node: #{(0...30).to_a.map { |num| position_of_each_node[rightmost_p2s_per_node[queue[num]]] }}"
+      # puts "degrees: #{(0...20).to_a.map { |num| @degrees[queue[num]] }}"
+      # puts "rightmost_p2s_per_node: #{(0...20).to_a.map { |num| position_of_each_node[rightmost_p2s_per_node[queue[num]]] }}"
       # puts "leftmost_node: #{position_of_each_node[leftmost_node_not_yet_finished]}"
       # puts "next_not_depleted_index: #{next_not_depleted_index}"
       sum_when_advancing_p1 = @degrees[queue[next_not_depleted_index]]+
@@ -1020,10 +1021,10 @@ class Graph
       # puts ""
       # puts "queue.length=#{queue.length}"
       # puts "p1=#{p1}, p2=#{p2}"
-      # puts "#{queue[0...10]}"
+      # puts "#{queue[0...20]}"
       start_node = queue[p1]
       end_node = queue[p2]
-      # puts "sum of degrees: #{queue[p1][1]+queue[p2][1]}"
+      # puts "sum of degrees: #{@degrees[queue[p1]]+@degrees[queue[p2]]}"
       if start_node < end_node
         test_tuple = [start_node, end_node]
       else
@@ -1097,7 +1098,7 @@ puts "\nSTRATEGY RANDOM"
 sample = g_original.strip_graph_of_all_edges
 num_of_tests_made = 50000
 # num_of_tests_made = 113050
-sample.instance_variable_set(:@res_file, File.open("random_results.txt", 'w+'))
+sample.instance_variable_set(:@res_file, File.open("results.txt", 'w+'))
 tested_pairs = sample.random_strategy g_original, num_of_tests_made
 puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
 puts "Tested pairs:\t\t#{tested_pairs.length}"
@@ -1137,10 +1138,36 @@ puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random
 # puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
 # Graph::plot_stuff stuff_to_plot, scale='lin', title='Complete strategy', x_label="number of tests", y_label="found edges", style='lines'
 
-puts "\nSTRATEGY TBF"
+# puts "\nSTRATEGY TBF"
+# # sample.instance_variable_set(:@res_file, File.open("complete_results.txt", 'w+'))
+# when_to_stop = 80000
+# tested_pairs = sample.tbf_strategy g_original, tested_pairs, when_to_stop
+# puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
+# puts "Tested pairs:\t\t#{tested_pairs.length}"
+# stuff_to_plot = sample.extract_data_for_plotting
+# # stuff_to_plot[0].map! { |thing| thing.fdiv(1000).round() }
+#
+# efficiency_worst, efficiency_best, efficiency_random = sample.analyse g_original, tested_pairs.length
+# puts "Worst efficiency:\t#{efficiency_worst}"
+# puts "Best efficiency:\t#{efficiency_best}"
+# puts "Random Efficiency:\t#{efficiency_random}"
+# efficiency = sample.calculate_efficiency g_original, tested_pairs.length
+# puts "Efficiency:\t\t#{efficiency}"
+# normalized_efficiency = (efficiency - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+# normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
+# puts "Normalized efficiency:\t#{normalized_efficiency}"
+# puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
+# Graph::plot_stuff stuff_to_plot, scale='lin', title='TBF strategy', x_label="number of tests", y_label="found edges", style='lines'
+
+puts "\nSTRATEGY MIXED"
 # sample.instance_variable_set(:@res_file, File.open("complete_results.txt", 'w+'))
-when_to_stop = 80000
-tested_pairs = sample.tbf_strategy g_original, tested_pairs, when_to_stop
+
+efficiency_random = calculate_efficiency(reference_graph, 10000)[2]
+
+when_to_stop = 113050
+currently_tested_edges = 0
+loop do
+  tested_pairs = sample.tbf_strategy g_original, tested_pairs, when_to_stop
 puts "Number of found edges:\t#{sample.instance_variable_get(:@graph).length/2}"
 puts "Tested pairs:\t\t#{tested_pairs.length}"
 stuff_to_plot = sample.extract_data_for_plotting
@@ -1156,4 +1183,4 @@ normalized_efficiency = (efficiency - efficiency_worst).fdiv(efficiency_best - e
 normalized_efficiency_random = (efficiency_random - efficiency_worst).fdiv(efficiency_best - efficiency_worst)
 puts "Normalized efficiency:\t#{normalized_efficiency}"
 puts "Relative efficiency:\t#{normalized_efficiency/normalized_efficiency_random}"
-Graph::plot_stuff stuff_to_plot, scale='lin', title='TBF strategy', x_label="number of tests", y_label="found edges", style='lines'
+Graph::plot_stuff stuff_to_plot, scale='lin', title='TBF strate
